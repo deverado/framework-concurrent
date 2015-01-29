@@ -1,19 +1,13 @@
-package de.deverado.framework.concurrent;
-
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.TreeMap;
-
-import javax.annotation.Nullable;
+package de.deverado.framework.concurrent.consistenthashing;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.hash.HashFunction;
 
-import de.deverado.framework.concurrent.ConsistentHashRings.RingHasher;
+import javax.annotation.Nullable;
+import javax.annotation.ParametersAreNonnullByDefault;
+import java.util.*;
+import java.util.Map.Entry;
 
 /**
  * Goals:
@@ -34,49 +28,43 @@ import de.deverado.framework.concurrent.ConsistentHashRings.RingHasher;
  * Implementation: node A has all entries that have the same hash as its key's
  * hash, or are less than A's key's hash and greater than the hash of the first
  * node B with a hash B.hash less than A.hash.
- * 
- * @param <T>
+ *
  */
+@ParametersAreNonnullByDefault
 public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
         implements
         ConsistentHashRingHoldingResourceEntries<NodeKeyT, NodeT, EntryKeyT, EntryT> {
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#hashEntryKey(EntryKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#hashEntryKey(EntryKeyT)
      */
     @Override
-    public long hashEntryKey(EntryKeyT key) {
+    public long hashEntryKey(@Nullable EntryKeyT key) {
         return ConsistentHashRings.hashKey(hashFunction, entryHasher, key);
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#hashNodeKey(NodeKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#hashNodeKey(NodeKeyT)
      */
     @Override
-    public long hashNodeKey(NodeKeyT key) {
+    public long hashNodeKey(@Nullable NodeKeyT key) {
         return ConsistentHashRings.hashKey(hashFunction, nodeHasher, key);
     }
 
     private final HashFunction hashFunction;
-    private final RingHasher<Object> nodeHasher;
-    private final RingHasher<Object> entryHasher;
+    private final ConsistentHashRings.RingHasher<Object> nodeHasher;
+    private final ConsistentHashRings.RingHasher<Object> entryHasher;
     private final TreeMap<Long, NodeT> nodeRing = Maps.newTreeMap();
     private final TreeMap<Long, Map<EntryKeyT, EntryT>> entryRing = Maps
             .newTreeMap();
 
-    public ConsistentHashRingImpl() {
-        this(null, null, null);
-    }
-
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    public ConsistentHashRingImpl(@Nullable HashFunction hashFunction,
-            @Nullable RingHasher<? super NodeKeyT> nodeHasher,
-            @Nullable RingHasher<? super EntryKeyT> entryHasher) {
+    public ConsistentHashRingImpl(HashFunction hashFunction,
+            ConsistentHashRings.RingHasher<? super NodeKeyT> nodeHasher,
+            ConsistentHashRings.RingHasher<? super EntryKeyT> entryHasher) {
         this.hashFunction = hashFunction;
-        this.nodeHasher = nodeHasher == null ? (RingHasher) ConsistentHashRings.DEFAULT_HASHER
-                : nodeHasher;
-        this.entryHasher = entryHasher == null ? (RingHasher) ConsistentHashRings.DEFAULT_HASHER
-                : entryHasher;
+        this.nodeHasher = (ConsistentHashRings.RingHasher<Object>) nodeHasher;
+        this.entryHasher = (ConsistentHashRings.RingHasher<Object>) entryHasher;
     }
 
     // public void addNodes(Collection<NodeT> nodes) {
@@ -86,18 +74,18 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     // }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#addNode(NodeKeyT,
+     * @see ConsistentHashRingHoldingResourceEntries#addNode(NodeKeyT,
      *      NodeT)
      */
     @Override
-    public Object addNode(NodeKeyT key, NodeT node) {
+    public NodeT addNode(NodeKeyT key, NodeT node) {
 
         long hashNodeKey = hashNodeKey(key);
         return addNodeByHash(hashNodeKey, node);
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#addNodeByHash(java.lang.Long,
+     * @see ConsistentHashRingHoldingResourceEntries#addNodeByHash(java.lang.Long,
      *      NodeT)
      */
     @Override
@@ -111,7 +99,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#removeNode(NodeKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#removeNode(NodeKeyT)
      */
     @Override
     public NodeT removeNode(NodeKeyT key) {
@@ -120,7 +108,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#removeNodeByHash(java.lang.Long)
+     * @see ConsistentHashRingHoldingResourceEntries#removeNodeByHash(java.lang.Long)
      */
     @Override
     public NodeT removeNodeByHash(Long hashNodeKey) {
@@ -128,12 +116,13 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getEntriesForNode(NodeKeyT,
+     * @see ConsistentHashRingHoldingResourceEntries#getEntriesForNode(NodeKeyT,
      *      boolean)
      */
     @Override
     public Iterable<EntryT> getEntriesForNode(NodeKeyT nodeKey,
             boolean checkNodeInRing) {
+
         Long nodeHash = hashNodeKey(nodeKey);
         if (checkNodeInRing) {
             if (!isHavingNode(nodeHash)) {
@@ -141,6 +130,11 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
                         "Given node key is not used in ring: " + nodeKey);
             }
         }
+
+        return getEntriesForNodeByHash(nodeHash);
+    }
+
+    public Iterable<EntryT> getEntriesForNodeByHash(Long nodeHash) {
         Long previousNodeInRing = previousKeyInRingNonInclusive(nodeRing,
                 nodeHash);
         if (null == previousNodeInRing) {
@@ -164,24 +158,33 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getNodes()
+     * @see ConsistentHashRingHoldingResourceEntries#getNodes()
      */
     @Override
     public Iterable<NodeT> getNodes() {
         return nodeRing.values();
     }
 
-    public NodeT getNode(NodeKeyT nodeKey) {
-        Long nodeKeyHash = hashNodeKey(nodeKey);
-        return getNode(nodeKeyHash);
+    /**
+     * @see ConsistentHashRingHoldingResourceEntries#getNodeEntries()
+     */
+    @Override
+    public Iterable<Map.Entry<Long, NodeT>> getNodeEntries() {
+        return nodeRing.entrySet();
     }
 
-    public NodeT getNode(Long nodeKeyHash) {
+    public NodeT getNode(@Nullable NodeKeyT nodeKey) {
+        Long nodeKeyHash = hashNodeKey(nodeKey);
+        return getNodeByHash(nodeKeyHash);
+    }
+
+    @Override
+    public NodeT getNodeByHash(Long nodeKeyHash) {
         return nodeRing.get(nodeKeyHash);
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getEntries()
+     * @see ConsistentHashRingHoldingResourceEntries#getEntries()
      */
     @Override
     public Iterable<EntryT> getEntries() {
@@ -242,10 +245,13 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getEntry(EntryKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#getEntry(EntryKeyT)
      */
     @Override
-    public EntryT getEntry(EntryKeyT key) {
+    public EntryT getEntry(@Nullable EntryKeyT key) {
+        if (key == null) {
+            return null;
+        }
 
         Long hash = hashEntryKey(key);
         Map<EntryKeyT, EntryT> inner = entryRing.get(hash);
@@ -257,7 +263,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#putEntry(EntryKeyT,
+     * @see ConsistentHashRingHoldingResourceEntries#putEntry(EntryKeyT,
      *      EntryT)
      */
     @Override
@@ -285,10 +291,14 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#removeEntry(EntryKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#removeEntry(EntryKeyT)
      */
     @Override
-    public EntryT removeEntry(EntryKeyT key) {
+    public EntryT removeEntry(@Nullable EntryKeyT key) {
+        if (key == null) {
+            return null;
+        }
+
         Long hash = hashEntryKey(key);
         Map<EntryKeyT, EntryT> inner = entryRing.get(hash);
         EntryT retval = null;
@@ -306,7 +316,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getNodeCount()
+     * @see ConsistentHashRingHoldingResourceEntries#getNodeCount()
      */
     @Override
     public int getNodeCount() {
@@ -314,7 +324,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#isHavingNodes()
+     * @see ConsistentHashRingHoldingResourceEntries#isHavingNodes()
      */
     @Override
     public boolean isHavingNodes() {
@@ -327,16 +337,22 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     @Override
-    public boolean isHavingNode(Long nodeKeyHash) {
+    public boolean isHavingNode(@Nullable Long nodeKeyHash) {
+        if (nodeKeyHash == null) {
+            return false;
+        }
         return nodeRing.containsKey(nodeKeyHash);
     }
 
-    public boolean isHavingNode(NodeKeyT key) {
+    public boolean isHavingNode(@Nullable NodeKeyT key) {
+        if (key == null) {
+            return false;
+        }
         return isHavingNode(hashNodeKey(key));
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getNodeForEntry(EntryKeyT)
+     * @see ConsistentHashRingHoldingResourceEntries#getNodeForEntry(EntryKeyT)
      */
     @Override
     public NodeT getNodeForEntry(EntryKeyT key) {
@@ -345,7 +361,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * @see vcode.framework.ConsistentHashRingHoldingResourceEntries#getNodeForEntry(java.lang.Long)
+     * @see ConsistentHashRingHoldingResourceEntries#getNodeForEntry(java.lang.Long)
      */
     @Override
     public NodeT getNodeForEntry(Long entryKeyHash) {
@@ -367,12 +383,26 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
         return nextEntryInRing.getValue();
     }
 
+    @Override
+    public NodeT getNodeBeforeNode(Long nodeKeyHash) {
+        Entry<Long, NodeT> previousEntryInRing = previousInnerEntryInRingNonInclusive(nodeRing,
+                nodeKeyHash);
+        // non-inclusive, so don't need to check key
+        if (previousEntryInRing == null) {
+            return null;
+        }
+        return previousEntryInRing.getValue();
+    }
+
     public NodeT getNodeAfterNode(NodeKeyT key) {
         return getNodeAfterNode(hashNodeKey(key));
     }
 
-    public boolean isNodeForEntry(NodeKeyT nodeKey, EntryKeyT entryKey,
+    public boolean isNodeForEntry(@Nullable NodeKeyT nodeKey, @Nullable EntryKeyT entryKey,
             boolean ensureNodeIsInRing) {
+        if (nodeKey == null || entryKey == null) {
+            return false;
+        }
         Long nodeKeyHash = hashNodeKey(nodeKey);
         if (ensureNodeIsInRing && !isHavingNode(nodeKeyHash)) {
             return false;
@@ -391,9 +421,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * 
-     * @param ring
-     * @param entryKeyHash
+     *
      * @return <code>null</code> for an empty ring. the entry with the given
      *         entryKeyHash or the next bigger key (or after a loop next bigger
      *         starting with the smallest key)
@@ -440,9 +468,7 @@ public class ConsistentHashRingImpl<NodeKeyT, NodeT, EntryKeyT, EntryT>
     }
 
     /**
-     * 
-     * @param ring
-     * @param entryKeyHash
+     *
      * @return <code>null</code> if ring is empty. the key with the given
      *         entryKeyHash or the next bigger (or after a loop next bigger
      *         starting with the smallest key)

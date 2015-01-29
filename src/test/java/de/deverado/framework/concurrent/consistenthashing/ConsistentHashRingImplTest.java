@@ -1,31 +1,23 @@
-package de.deverado.framework.concurrent;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.TreeMap;
-
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+package de.deverado.framework.concurrent.consistenthashing;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.hash.Hasher;
 import com.google.common.primitives.Ints;
+import de.deverado.framework.concurrent.consistenthashing.ConsistentHashRingHoldingResourceEntries;
+import de.deverado.framework.concurrent.consistenthashing.ConsistentHashRingImpl;
+import de.deverado.framework.concurrent.consistenthashing.ConsistentHashRings;
+import de.deverado.framework.concurrent.consistenthashing.ConsistentHashRings.RingHasher;
+import de.deverado.framework.core.RandomHelpers;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
 
-import de.deverado.framework.concurrent.ConsistentHashRings.RingHasher;
-import de.deverado.framework.core.Utils;
+import java.util.*;
+
+import static org.junit.Assert.*;
 
 public class ConsistentHashRingImplTest {
 
@@ -35,7 +27,8 @@ public class ConsistentHashRingImplTest {
 
     @Before
     public void setUp() throws Exception {
-        o = new ConsistentHashRingImpl<String, String, String, String>();
+        o = new ConsistentHashRingImpl<String, String, String, String>(ConsistentHashRings.DEFAULT_64_BIT_HASH_FUNC,
+                ConsistentHashRings.DEFAULT_HASHER, ConsistentHashRings.DEFAULT_HASHER);
 
     }
 
@@ -56,10 +49,10 @@ public class ConsistentHashRingImplTest {
                 return 123;
             }
         };
-        o = new ConsistentHashRingImpl<String, String, String, String>(null,
-                null, h);
+        o = new ConsistentHashRingImpl<String, String, String, String>(ConsistentHashRings.DEFAULT_64_BIT_HASH_FUNC,
+                ConsistentHashRings.DEFAULT_HASHER, h);
         addAFewEntries(o);
-        shouldIterateAllEntriesViaNodes(o);
+        shouldIterateAllEntriesViaNodesAndCheckNoDups(o);
     }
 
     @Test
@@ -79,7 +72,7 @@ public class ConsistentHashRingImplTest {
         for (int i = 0; i < 3; i++) {
             setUp();
             addAFewEntries(o);
-            shouldIterateAllEntriesViaNodes(o);
+            shouldIterateAllEntriesViaNodesAndCheckNoDups(o);
         }
     }
 
@@ -93,7 +86,7 @@ public class ConsistentHashRingImplTest {
     public void shouldGetNodeForEntryWithLooping() {
         addAFewEntries(o, 1, 0); // test looping
         for (int i = 0; i < 100; i++) {
-            String entryKey = Utils.randIntStr();
+            String entryKey = RandomHelpers.randIntStr();
             assertEquals(Iterables.getFirst(nodesAdded.values(), null),
                     o.getNodeForEntry(entryKey));
 
@@ -143,13 +136,17 @@ public class ConsistentHashRingImplTest {
             // + Iterables.toString(o.getEntries());
             assertEquals(node, o.removeNode(nodeKey));
             nodesAdded.remove(nodeKey);
-            shouldIterateAllEntriesViaNodes(o);
+            assertEquals(nodesAdded.size(), o.getNodeCount());
+            assertEquals(entriesAdded.size(), Iterables.size(o.getEntries()));
+            if (nodesAdded.size() > 0) { // last entry gone iteration by nodes will yield nothing, see below
+                shouldIterateAllEntriesViaNodesAndCheckNoDups(o);
+            }
         }
         // the entries should still be contained
         shouldIterateAllEntriesViaGetEntriesForOtherTests();
         // and be reavailable after node gets added:
         o.addNode("1231", "node1231");
-        shouldIterateAllEntriesViaNodes(o);
+        shouldIterateAllEntriesViaNodesAndCheckNoDups(o);
     }
 
     @Test
@@ -165,7 +162,8 @@ public class ConsistentHashRingImplTest {
             // + Iterables.toString(o.getEntries());
             assertEquals(/* message, */entry, o.removeEntry(entryKey));
             entriesAdded.remove(entryKey);
-            shouldIterateAllEntriesViaNodes(o);
+            assertEquals(entriesAdded.size(), Iterables.size(o.getEntries()));
+            shouldIterateAllEntriesViaNodesAndCheckNoDups(o);
         }
     }
 
@@ -179,7 +177,7 @@ public class ConsistentHashRingImplTest {
 
     @Test
     public void shouldShowNodeIn() {
-        String randIntStr = Utils.randIntStr();
+        String randIntStr = RandomHelpers.randIntStr();
         long hash = o.hashNodeKey(randIntStr);
         assertFalse(o.isHavingNode(randIntStr));
         o.addNode(randIntStr, "node" + randIntStr);
@@ -191,12 +189,12 @@ public class ConsistentHashRingImplTest {
     @Test
     public void shouldReturnNullOnGetNodeAfterNodeForEmptyRing() {
 
-        assertNull(o.getNodeAfterNode(new Long(123421839)));
+        assertNull(o.getNodeAfterNode((long)123421839));
     }
 
     @Test
     public void shouldHaveWorkingGetNodeAfterNode() {
-        String[] threeStrings = Utils.randIntStrings(3, true);
+        String[] threeStrings = RandomHelpers.randIntStrings(3, true);
 
         o.addNode(threeStrings[0], "node" + threeStrings[0]);
         assertNull("must be null for itself because there is no next",
@@ -209,7 +207,7 @@ public class ConsistentHashRingImplTest {
 
         // must work like a ring:
         String[] res = new String[3];
-        res[0] = threeStrings[Utils.randPosInt(3)];
+        res[0] = threeStrings[RandomHelpers.randPosInt(3)];
         res[1] = makeNodeKey(o.getNodeAfterNode(res[0]));
         res[2] = makeNodeKey(o.getNodeAfterNode(res[1]));
         assertEquals(res[0], makeNodeKey(o.getNodeAfterNode(res[2])));
@@ -219,12 +217,13 @@ public class ConsistentHashRingImplTest {
         assertEquals(Arrays.asList(threeStrings), Arrays.asList(res));
     }
 
-    private void shouldIterateAllEntriesViaNodes(
+    private void shouldIterateAllEntriesViaNodesAndCheckNoDups(
             ConsistentHashRingHoldingResourceEntries<String, String, String, String> o2) {
         TreeMap<String, String> result = new TreeMap<String, String>();
         for (String node : o2.getNodes()) {
             for (String entry : o2.getEntriesForNode(makeNodeKey(node), true)) {
-                result.put(entry, null);
+                String previous = result.put(entry, null);
+                assertNull("Duplicate entry for node " + node + ": " + previous, previous);
             }
         }
         compareAllEntryIterationWithExpected(result);
@@ -247,35 +246,34 @@ public class ConsistentHashRingImplTest {
 
     public void compareAllEntryIterationWithExpected(
             TreeMap<String, String> result) {
-        if ("1".contains("2")) {
-            // this shows better comparison results reflecting the ring but
-            // skips dups
 
-            TreeMap<Long, String> origEntriesByHash = Maps.newTreeMap();
-            for (String k : entriesAdded.keySet()) {
-                origEntriesByHash.put(o.hashEntryKey(k), entriesAdded.get(k));
-            }
-            TreeMap<Long, String> actualEntriesByHash = Maps.newTreeMap();
-            for (String entry : result.keySet()) {
-                String entryKey = makeEntryKey(entry);
-                String value = entriesAdded.get(entryKey);
-                if (value == null) {
-                    System.err.println("found no entry for key " + entryKey
-                            + " and hash " + o.hashEntryKey(entryKey));
-                }
-                actualEntriesByHash.put(o.hashEntryKey(entryKey), value);
-            }
-            // System.out.println("Actual by hash: " + actualEntriesByHash);
+        // this shows better comparison results reflecting the ring but
+        // skips dups
 
-            assertEquals(origEntriesByHash, actualEntriesByHash);
-
-            ArrayList<String> addedVals = Lists.newArrayList(entriesAdded
-                    .values());
-            Collections.sort(addedVals);
-            ArrayList<String> actualVals = Lists.newArrayList(result.keySet());
-            Collections.sort(actualVals);
-            Assert.assertEquals(addedVals, actualVals);
+        TreeMap<Long, String> origEntriesByHash = Maps.newTreeMap();
+        for (String k : entriesAdded.keySet()) {
+            origEntriesByHash.put(o.hashEntryKey(k), entriesAdded.get(k));
         }
+        TreeMap<Long, String> actualEntriesByHash = Maps.newTreeMap();
+        for (String entry : result.keySet()) {
+            String entryKey = makeEntryKey(entry);
+            String value = entriesAdded.get(entryKey);
+            if (value == null) {
+                System.err.println("found no entry for key " + entryKey
+                        + " and hash " + o.hashEntryKey(entryKey));
+            }
+            actualEntriesByHash.put(o.hashEntryKey(entryKey), value);
+        }
+        // System.out.println("Actual by hash: " + actualEntriesByHash);
+
+        assertEquals(origEntriesByHash, actualEntriesByHash);
+
+        ArrayList<String> addedVals = Lists.newArrayList(entriesAdded
+                .values());
+        Collections.sort(addedVals);
+        ArrayList<String> actualVals = Lists.newArrayList(result.keySet());
+        Collections.sort(actualVals);
+        Assert.assertEquals(addedVals, actualVals);
     }
 
     private void addAFewEntries(
@@ -288,7 +286,7 @@ public class ConsistentHashRingImplTest {
             int nodes, int entries) {
         nodesAdded = new TreeMap<String, String>();
         for (int i = 0; i < nodes; i++) {
-            String val = Utils.randIntStr();
+            String val = RandomHelpers.randIntStr();
             if (!nodesAdded.containsKey(val)) {
                 nodesAdded.put(val, "node" + val);
                 o2.addNode(val, "node" + val);
@@ -296,7 +294,7 @@ public class ConsistentHashRingImplTest {
         }
         entriesAdded = new TreeMap<String, String>();
         for (int i = 0; i < entries; i++) {
-            String val = Utils.randIntStr();
+            String val = RandomHelpers.randIntStr();
             if (!entriesAdded.containsKey(val)) {
                 entriesAdded.put(val, "entry" + val);
                 o2.putEntry(val, "entry" + val);
@@ -313,8 +311,8 @@ public class ConsistentHashRingImplTest {
                 return 123;
             }
         };
-        o = new ConsistentHashRingImpl<String, String, String, String>(null, h,
-                null);
+        o = new ConsistentHashRingImpl<String, String, String, String>(ConsistentHashRings.DEFAULT_64_BIT_HASH_FUNC, h,
+                ConsistentHashRings.DEFAULT_HASHER);
         o.addNode("1", "node1");
         try {
             o.addNode("2", "node2");

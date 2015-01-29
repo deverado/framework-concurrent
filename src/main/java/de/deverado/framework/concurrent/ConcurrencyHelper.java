@@ -1,17 +1,15 @@
 package de.deverado.framework.concurrent;
 
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import javax.annotation.Nullable;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.google.common.base.Function;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningScheduledExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ConcurrencyHelper {
 
@@ -23,7 +21,8 @@ public class ConcurrencyHelper {
      * 
      * @param executor
      * @param toRetry
-     *            must return non-null - abort by returning a TRUE future
+     *            success by returning a TRUE future, a null return value will abort retries, FALSE or Exception will
+     *            lead to a retry.
      * @param totalTimeoutMillis
      *            must be > 0
      * @param retryIntervalMillis
@@ -46,19 +45,29 @@ public class ConcurrencyHelper {
 
             @Override
             public void run() {
-                boolean success = false;
+                boolean shouldRetry = true;
                 try {
                     if (refFuture != null) {
                         Boolean res = refFuture.get();
+                        if (res == null) {
+                            shouldRetry = false; // abort on null
+                            try {
+                                if (failureCB != null) {
+                                    failureCB.run();
+                                }
+                            } catch (Exception e) {
+                                log.warn("Exception in failureCB", e);
+                            }
+                        }
                         if (Boolean.TRUE.equals(res)) {
 
-                            success = true;
+                            shouldRetry = false;
                             try {
                                 if (successCB != null) {
                                     successCB.run();
                                 }
                             } catch (Exception e) {
-                                log.warn("Problem in successCB", e);
+                                log.warn("Problem in successCB, aborting retries", e);
                             }
                         }
                     }
@@ -67,7 +76,7 @@ public class ConcurrencyHelper {
                             + "retrying if time left", toRetry, e.getMessage());
                 }
 
-                if (!success) {
+                if (shouldRetry) {
                     final long totalMillisLeft = status.getTotalMillisLeft();
                     if (totalMillisLeft <= 0) {
                         log.debug(
@@ -102,7 +111,7 @@ public class ConcurrencyHelper {
                                             toRetry);
                                 } else {
                                     refFuture.addListener(resolver.get(),
-                                            MoreExecutors.sameThreadExecutor());
+                                            MoreExecutors.directExecutor());
                                 }
                             }
                         }, retryIntervalLeft, TimeUnit.MILLISECONDS);

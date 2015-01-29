@@ -1,20 +1,21 @@
 package de.deverado.framework.concurrent;
 
+import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import de.deverado.framework.core.Strings2;
+import org.apache.commons.codec.digest.DigestUtils;
+
 import java.io.File;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.apache.commons.codec.digest.DigestUtils;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-
-import de.deverado.framework.core.Strings2;
-import de.deverado.framework.core.Utils;
-
+/**
+ * Simple sharding to a number of (pre-defined) buckets. {@link de.deverado.framework.concurrent.consistenthashing.ConsistentHashRings}
+ * for more complex sharding.
+ */
 public class Sharding {
 
     public interface ShardingStrategyGeneric<T> {
@@ -58,7 +59,7 @@ public class Sharding {
 
         @Override
         public int shard(int val) {
-            return Utils.hashTo16384(val);
+            return Hashing.hashTo16384(val);
         }
 
         @Override
@@ -75,7 +76,7 @@ public class Sharding {
 
         @Override
         public int shard(int val) {
-            return Utils.hashTo4096(val);
+            return Hashing.hashTo4096(val);
         }
 
         @Override
@@ -92,7 +93,7 @@ public class Sharding {
 
         @Override
         public int shard(int val) {
-            return Utils.hashTo512(val);
+            return Hashing.hashTo512(val);
         }
 
         @Override
@@ -109,7 +110,7 @@ public class Sharding {
 
         @Override
         public int shard(int val) {
-            return Utils.hashTo256(val);
+            return Hashing.hashTo256(val);
         }
 
         @Override
@@ -126,7 +127,7 @@ public class Sharding {
 
         @Override
         public int shard(int val) {
-            return Utils.hashTo16(val);
+            return Hashing.hashTo16(val);
         }
 
         @Override
@@ -199,12 +200,12 @@ public class Sharding {
 
         @Override
         public int shard(CharSequence val) {
-            return shard(Utils.hash_murmur3(val));
+            return shard(Hashing.hash_murmur3(val));
         }
 
         @Override
         public int shard(byte[] val) {
-            return Utils.hash_murmur3(val, 0, val.length);
+            return Hashing.hash_murmur3(val, 0, val.length);
         }
 
     }
@@ -252,10 +253,7 @@ public class Sharding {
 
     /**
      * Uses sha hash of in encoded as hex for levels.
-     * 
-     * @param levels
-     * @param in
-     * @return
+     *
      */
     public static String[] shardToMultiLevelHexStrings(int levels, String in) {
         byte[] sha = DigestUtils.sha1(Strings2.toUTF8ByteArray(in));

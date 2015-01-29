@@ -3,17 +3,16 @@ package de.deverado.framework.concurrent;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Random;
-
+import de.deverado.framework.concurrent.Sharding.ShardingStrategy;
+import de.deverado.framework.core.Math2;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
 import shardableobjectids.ShardableObjectId;
-import de.deverado.framework.concurrent.Sharding.ShardingStrategy;
-import de.deverado.framework.core.Utils;
+
+import java.util.Arrays;
+import java.util.Date;
+import java.util.Random;
 
 public class ShardingTest {
 
@@ -33,13 +32,14 @@ public class ShardingTest {
 
     @Test
     public void shouldShard256Evenly() {
-        testSharding(50000, 256, 10,
-                new Sharding.ShardByArbitraryStrategy(256), 25);
+        // for (int i = 0; i < 40; i++)
+        testSharding(80000, 256, 7, new Sharding.ShardByArbitraryStrategy(256),
+                25);
     }
 
     /**
-     * 512 is not power of 2, better adapter than completely arbitrary, but max
-     * diff bias stronger
+     * 512 or 9 bits is not easily folded into, better adapter than completely
+     * arbitrary, but max diff bias stronger
      */
     @Test
     public void shouldShard512Evenly() {
@@ -76,14 +76,15 @@ public class ShardingTest {
 
     @Test
     public void shouldShard32Evenly() {
-        testSharding(10000, 32, 7, new Sharding.ShardByArbitraryStrategy(32),
+        testSharding(10000, 32, 8, new Sharding.ShardByArbitraryStrategy(32),
                 20);
     }
 
     @Test
     public void shouldShard128Evenly() {
+        // for (int i = 0; i < 40; i++)
         testSharding(50000, 128, 7, new Sharding.ShardByArbitraryStrategy(128),
-                20);
+                25);
     }
 
     public static void testSharding(int count, int shards,
@@ -109,7 +110,7 @@ public class ShardingTest {
         // ArrayList<String> later = new ArrayList<String>();
 
         int avg = total / counters.length;
-        double stddev = Utils.stddev(counters);
+        double stddev = Math2.stddev(counters);
         double stddevMeanPct = stddev / avg * 100;
         assertTrue("Stddev too big: " + stddev + ", of mean: " + stddevMeanPct
                 + " %", stddev < (maxStddevMeanPct * 0.01 * avg));
@@ -127,10 +128,13 @@ public class ShardingTest {
             // later.add(o);
             // }
 
-            assertTrue("Bias should not be this strong (stddev of mean:"
-                    + stddevMeanPct + " %): " + iVal + " diff: " + compVal,
-                    compVal < (maxDiffMeanPct * 0.01 * avg)
-                            && compVal > -(maxDiffMeanPct * 0.01 * avg));
+            boolean isWithinToleratedMaxSingleCounterBias = compVal < (maxDiffMeanPct * 0.01 * avg)
+                    && compVal > -(maxDiffMeanPct * 0.01 * avg);
+            String biasMsg = String
+                    .format("Bias should not be this strong "
+                            + "(stddev of mean: %.3f %%): i=%d counter=%d diff to avg=%d diff%% to avg=%.2f",
+                            stddevMeanPct, i, iVal, compVal, (100.0 * Math.abs(compVal) / avg));
+            assertTrue(biasMsg, isWithinToleratedMaxSingleCounterBias);
         }
         // System.out.println("haveVal:");
         // for (String s : later) {
