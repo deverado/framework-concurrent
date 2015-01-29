@@ -1,0 +1,39 @@
+apply plugin: 'java'
+
+group = 'de.deverado.framework'
+// in settings: name
+version = '0.1-SNAPSHOT'
+description = 'deverado framework concurrency helpers (consistent hashing...)'
+sourceCompatibility = 1.7
+
+dependencies {
+
+    compile 'de.deverado.framework:framework-core:0.1-SNAPSHOT'
+    
+    compile 'org.slf4j:slf4j-api:1.7.5'
+    compile 'com.google.code.findbugs:jsr305:2.0.0'
+    
+    // guava, commons lang, joda time
+    compile 'com.google.guava:guava:18.0'
+    compile 'org.apache.commons:commons-lang3:3.3.2' // use this for null checks, common string modifications etc
+    
+    testCompile 'junit:junit:4.11'
+    testCompile 'shardableobjectids:shardableobjectids:2.0-SNAPSHOT'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+apply plugin: 'maven-publish'
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+
+apply plugin: 'eclipse'
