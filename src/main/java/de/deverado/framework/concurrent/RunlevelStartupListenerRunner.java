@@ -2,8 +2,10 @@ package de.deverado.framework.concurrent;/*
  * Copyright Georg Koester 2012-15. All rights reserved.
  */
 
+import com.google.common.base.Function;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.Multimap;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,11 +25,17 @@ public class RunlevelStartupListenerRunner implements Callable<Void> {
 
     private Multimap<String, StartupListener> listenersByRunlevel;
 
+    private List<Function<Pair<String, Collection<StartupListener>>, Void>> preRunListeners = new ArrayList<>();
+
     public static RunlevelStartupListenerRunner create(Multimap<String, StartupListener> listenersByRunlevel) {
 
         RunlevelStartupListenerRunner result = new RunlevelStartupListenerRunner();
         result.listenersByRunlevel = listenersByRunlevel;
         return result;
+    }
+
+    public void addPreRunListener(Function<Pair<String, Collection<StartupListener>>, Void> preRunListener) {
+        preRunListeners.add(preRunListener);
     }
 
     @Override
@@ -41,8 +49,15 @@ public class RunlevelStartupListenerRunner implements Callable<Void> {
         for (String runlevel : runlevels) {
             Collection<StartupListener> listeners = listenersByRunlevel.get(runlevel);
             if (listeners != null && !listeners.isEmpty()) {
-                LOG.debug("Running {} startup listeners for level {}", listeners.size(), runlevel);
+                if (preRunListeners.size()> 0) {
+                    LOG.debug("Running {} pre-run listeners for level {}", preRunListeners.size(),
+                            runlevel);
+                    for (Function<Pair<String, Collection<StartupListener>>, Void> l : preRunListeners) {
+                        l.apply(Pair.of(runlevel, listeners));
+                    }
+                }
 
+                LOG.debug("Running {} startup listeners for level {}", listeners.size(), runlevel);
                 for (StartupListener l : listeners) {
                     Stopwatch singleWatch = Stopwatch.createStarted();
                     try {
